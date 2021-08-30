@@ -1,0 +1,92 @@
+version: '3.1'
+
+networks:
+    app-network:
+        driver: bridge
+
+services: 
+
+    mailhog:
+        image: mailhog/mailhog:latest
+        container_name: mailhog
+        ports:
+          - "8001:8025"
+
+    php: 
+        build: .docker/php
+        container_name: php
+        #entrypoint: dockerize -template ./.docker/php/.env:/public/.env -wait tcp://db:3306 -wait -timeout 40s php-fpm
+        environment: 
+            - MYSQL_DATABASE=dev
+            - MYSQL_ROOT_PASSWORD=root
+            - MYSQL_USER=root
+        volumes:
+            - ./application/html:/var/www
+            - ./application/logs/xdebug:/logs/xdebug
+            - ./application/logs/php-fpm/:/tmp/xdebug_log
+            - ./docker/php/custom.conf:/usr/local/etc/php-fpm.d/zz-custom.conf
+            - ./docker/php/xdebug.ini:/usr/local/etc/php/conf.d/zz-xdebug.ini
+        networks:
+            - app-network 
+        depends_on: 
+            - db
+            - redis
+
+    server: 
+        build: .docker/nginx
+        container_name: server
+        restart: always
+        tty: true
+        ports:
+            - "8000:80"
+        volumes:
+            - ./application/html:/var/www
+        networks:
+            - app-network 
+        depends_on: 
+            - php
+
+    redis:
+        image: redis:alpine
+        expose:
+            - 6379
+        networks:
+            - app-network 
+
+    db:
+        image: mariadb
+        #command: --inno-db-use-native-aio=0
+        container_name: db
+        restart: always
+        tty: true
+        ports:
+            - "3306:3306"
+        environment:
+            MYSQL_ROOT_PASSWORD: "root"
+            MYSQL_DATABASE: "dev"
+        volumes:
+            - ./application/database:/var/lib/mysql
+        networks:
+            - app-network
+
+    adminer:
+        image: adminer
+        restart: always
+        ports:
+            - 8081:8080
+        networks:
+            - app-network
+
+
+    phpmyadmin:
+        image: phpmyadmin
+        restart: always
+        ports:
+          - 8080:80
+        environment:
+          - PMA_ARBITRARY=1
+        depends_on: 
+          - db
+          - php
+        networks:
+          - app-network
